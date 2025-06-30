@@ -137,7 +137,7 @@ class IP {
 	 * @return bool True if valid CIDR format.
 	 */
 	public static function is_valid_range( string $range ): bool {
-		if ( strpos( $range, '/' ) === false ) {
+		if ( ! str_contains( $range, '/' ) ) {
 			return false;
 		}
 
@@ -202,7 +202,7 @@ class IP {
 		foreach ( $ip_list as $list_ip ) {
 			$list_ip = trim( $list_ip );
 
-			if ( strpos( $list_ip, '/' ) !== false && self::is_valid_range( $list_ip ) ) {
+			if ( str_contains( $list_ip, '/' ) && self::is_valid_range( $list_ip ) ) {
 				if ( self::is_in_range( $ip, $list_ip ) ) {
 					return true;
 				}
@@ -275,7 +275,7 @@ class IP {
 	 */
 	public static function is_anonymized( string $ip ): bool {
 		// Check for masked IPs (with asterisks)
-		if ( strpos( $ip, '*' ) !== false ) {
+		if ( str_contains( $ip, '*' ) ) {
 			return true;
 		}
 
@@ -299,25 +299,6 @@ class IP {
 		}
 
 		return false;
-	}
-
-	/**
-	 * Anonymize multiple IP addresses.
-	 *
-	 * @param array $ips Array of IP addresses to anonymize.
-	 *
-	 * @return array Array of anonymized IP addresses.
-	 */
-	public static function anonymize_multiple( array $ips ): array {
-		$anonymized = [];
-		foreach ( $ips as $ip ) {
-			$result = self::anonymize( $ip );
-			if ( $result !== null ) {
-				$anonymized[] = $result;
-			}
-		}
-
-		return $anonymized;
 	}
 
 	/**
