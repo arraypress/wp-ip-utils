@@ -443,5 +443,5 @@ This project is licensed under the GPL-2.0-or-later License.
 
 ## Support
 
-- [Documentation](https://github.com/arraypress/ip-utils)
-- [Issue Tracker](https://github.com/arraypress/ip-utils/issues)
+- [Documentation](https://github.com/arraypress/wp-ip-utils)
+- [Issue Tracker](https://github.com/arraypress/wp-ip-utils/issues)
