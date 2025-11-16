@@ -1,10 +1,10 @@
 {
-  "name": "arraypress/wp-ip-utils",
+  "name": "arraypress/wp-utils-ip",
   "version": "1.0.0",
-  "description": "A lean WordPress library for IP address operations and validation",
+  "description": "A lean WordPress utility for IP address validation, CIDR operations, and GDPR-compliant anonymization",
   "type": "library",
   "license": "GPL-2.0-or-later",
-  "homepage": "https://github.com/arraypress/ip-utils/",
+  "homepage": "https://github.com/arraypress/wp-utils-ip/",
   "authors": [
     {
       "name": "David Sherlock",
@@ -30,8 +30,8 @@
   "minimum-stability": "dev",
   "prefer-stable": true,
   "support": {
-    "issues": "https://github.com/arraypress/wp-ip-utils/issues",
-    "source": "https://github.com/arraypress/wp-ip-utils"
+    "issues": "https://github.com/arraypress/wp-utils-ip/issues",
+    "source": "https://github.com/arraypress/wp-utils-ip"
   },
   "keywords": [
     "wordpress",
@@ -39,9 +39,9 @@
     "ipv4",
     "ipv6",
     "cidr",
-    "network",
     "validation",
     "anonymize",
+    "gdpr",
     "arraypress"
   ]
 }

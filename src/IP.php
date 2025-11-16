@@ -119,17 +119,6 @@ class IP {
 	}
 
 	/**
-	 * Check if an IP address is public.
-	 *
-	 * @param string $ip The IP address to check.
-	 *
-	 * @return bool True if the IP is public.
-	 */
-	public static function is_public( string $ip ): bool {
-		return self::is_valid( $ip ) && ! self::is_private( $ip );
-	}
-
-	/**
 	 * Check if an IP address or range is in valid CIDR format.
 	 *
 	 * @param string $range The IP range to validate.
@@ -243,196 +232,6 @@ class IP {
 		return null;
 	}
 
-	/**
-	 * Mask the last octet of an IPv4 address or last group of IPv6.
-	 *
-	 * @param string $ip The IP address to mask.
-	 *
-	 * @return string|null The masked IP address, or null if invalid.
-	 */
-	public static function mask_last_octet( string $ip ): ?string {
-		if ( ! self::is_valid( $ip ) ) {
-			return null;
-		}
-
-		if ( self::is_valid_ipv4( $ip ) ) {
-			return preg_replace( '/\.\d+$/', '.***', $ip );
-		}
-
-		if ( self::is_valid_ipv6( $ip ) ) {
-			return preg_replace( '/:[^:]*$/', ':****', $ip );
-		}
-
-		return null;
-	}
-
-	/**
-	 * Check if an IP address is already anonymized.
-	 *
-	 * @param string $ip The IP address to check.
-	 *
-	 * @return bool True if the IP appears to be anonymized, false otherwise.
-	 */
-	public static function is_anonymized( string $ip ): bool {
-		// Check for masked IPs (with asterisks)
-		if ( str_contains( $ip, '*' ) ) {
-			return true;
-		}
-
-		// Special case for IPv6 all-zeros
-		if ( $ip === '::' ) {
-			return true;
-		}
-
-		// Only check valid IPs to avoid false positives
-		if ( ! self::is_valid( $ip ) ) {
-			return false;
-		}
-
-		// Check for anonymized patterns only on valid IPs
-		if ( self::is_valid_ipv4( $ip ) && preg_match( '/\.0$/', $ip ) ) {
-			return true;
-		}
-
-		if ( self::is_valid_ipv6( $ip ) && preg_match( '/:0$/', $ip ) ) {
-			return true;
-		}
-
-		return false;
-	}
-
-	/**
-	 * Convert an IP address to its decimal representation.
-	 *
-	 * @param string $ip The IP address to convert.
-	 *
-	 * @return string The decimal representation of the IP, or empty string on failure.
-	 */
-	public static function to_decimal( string $ip ): string {
-		if ( self::is_valid_ipv4( $ip ) ) {
-			return (string) ip2long( $ip );
-		}
-
-		if ( self::is_valid_ipv6( $ip ) ) {
-			$binary = inet_pton( $ip );
-			$hex    = unpack( 'H*hex', $binary )['hex'];
-			$dec    = '0';
-			for ( $i = 0; $i < strlen( $hex ); $i ++ ) {
-				$dec = bcadd( bcmul( $dec, '16' ), (string) hexdec( $hex[ $i ] ) );
-			}
-
-			return $dec;
-		}
-
-		return '';
-	}
-
-	/**
-	 * Convert a decimal representation back to an IP address.
-	 *
-	 * @param string $decimal The decimal representation of an IP.
-	 * @param bool   $is_ipv6 Whether the decimal represents an IPv6 address.
-	 *
-	 * @return string The IP address, or empty string on failure.
-	 */
-	public static function from_decimal( string $decimal, bool $is_ipv6 = false ): string {
-		if ( $is_ipv6 ) {
-			$hex = '';
-			while ( bccomp( $decimal, '0' ) > 0 ) {
-				$hex     = dechex( (int) bcmod( $decimal, '16' ) ) . $hex;
-				$decimal = bcdiv( $decimal, '16', 0 );
-			}
-			$hex    = str_pad( $hex, 32, '0', STR_PAD_LEFT );
-			$binary = pack( 'H*', $hex );
-
-			return inet_ntop( $binary ) ?: '';
-		}
-
-		return long2ip( (int) $decimal ) ?: '';
-	}
-
-	/**
-	 * Get the network address of a CIDR range.
-	 *
-	 * @param string $cidr The CIDR range.
-	 *
-	 * @return string The network address, or empty string on failure.
-	 */
-	public static function get_network_address( string $cidr ): string {
-		$parts = explode( '/', $cidr );
-		if ( count( $parts ) !== 2 ) {
-			return '';
-		}
-
-		[ $ip, $prefix ] = $parts;
-		$prefix = (int) $prefix;
-
-		if ( self::is_valid_ipv4( $ip ) ) {
-			$mask = - 1 << ( 32 - $prefix );
-
-			return long2ip( ip2long( $ip ) & $mask ) ?: '';
-		}
-
-		if ( self::is_valid_ipv6( $ip ) ) {
-			$mask    = self::create_ipv6_mask( $prefix );
-			$network = inet_pton( $ip ) & $mask;
-
-			return inet_ntop( $network ) ?: '';
-		}
-
-		return '';
-	}
-
-	/**
-	 * Get the broadcast address of a CIDR range (IPv4 only).
-	 *
-	 * @param string $cidr The CIDR range.
-	 *
-	 * @return string The broadcast address, or empty string on failure.
-	 */
-	public static function get_broadcast_address( string $cidr ): string {
-		[ $ip, $prefix ] = explode( '/', $cidr );
-		if ( self::is_valid_ipv4( $ip ) ) {
-			$mask      = - 1 << ( 32 - (int) $prefix );
-			$broadcast = ip2long( $ip ) | ~$mask;
-
-			return long2ip( $broadcast ) ?: '';
-		}
-
-		return '';  // IPv6 doesn't use broadcast addresses
-	}
-
-	/**
-	 * Calculate the number of available IP addresses in a CIDR range.
-	 *
-	 * @param string $cidr The CIDR range.
-	 *
-	 * @return int The number of available IP addresses, or 0 on failure.
-	 */
-	public static function get_address_count( string $cidr ): int {
-		$parts = explode( '/', $cidr );
-		if ( count( $parts ) !== 2 ) {
-			return 0;
-		}
-
-		[ $ip, $prefix ] = $parts;
-		$prefix = (int) $prefix;
-
-		if ( self::is_valid_ipv4( $ip ) ) {
-			return max( 0, pow( 2, 32 - $prefix ) - 2 );  // Subtract network and broadcast addresses
-		}
-
-		if ( self::is_valid_ipv6( $ip ) ) {
-			if ( $prefix >= 64 ) {
-				return min( PHP_INT_MAX, pow( 2, 128 - $prefix ) );
-			}
-
-			return PHP_INT_MAX; // For very large ranges
-		}
-
-		return 0;
-	}
-
 	// ========================================
 	// Private Helper Methods
 	// ========================================
@@ -467,26 +266,16 @@ class IP {
 	private static function is_ipv6_in_range( string $ip, string $subnet, int $bits ): bool {
 		$ip_bin     = inet_pton( $ip );
 		$subnet_bin = inet_pton( $subnet );
-		$mask_bin   = self::create_ipv6_mask( $bits );
 
-		return ( ( $ip_bin & $mask_bin ) === ( $subnet_bin & $mask_bin ) );
-	}
-
-	/**
-	 * Creates an IPv6 mask based on the number of network bits.
-	 *
-	 * @param int $bits The number of network bits.
-	 *
-	 * @return string Binary representation of the IPv6 mask.
-	 */
-	private static function create_ipv6_mask( int $bits ): string {
-		$mask = str_repeat( "\xFF", $bits >> 3 );
-		$bits &= 7;
-		if ( $bits ) {
-			$mask .= chr( 0xFF << ( 8 - $bits ) );
+		// Create mask
+		$mask      = str_repeat( "\xFF", $bits >> 3 );
+		$remainder = $bits & 7;
+		if ( $remainder ) {
+			$mask .= chr( 0xFF << ( 8 - $remainder ) );
 		}
+		$mask = str_pad( $mask, 16, "\x00" );
 
-		return str_pad( $mask, 16, "\x00" );
+		return ( ( $ip_bin & $mask ) === ( $subnet_bin & $mask ) );
 	}
 
 }

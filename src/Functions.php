@@ -7,24 +7,26 @@
  *
  * Functions included:
  * - get_user_ip() - Get the current user's IP address
- * - anonymize_ip() - Anonymize an IP address
- * - is_valid_ip() - Check if IP address is valid
- * - is_ip_in_range() - Check if IP is in CIDR range
+ * - anonymize_ip() - Anonymize an IP address for GDPR compliance
  *
  * @package ArrayPress\IPUtils
  * @since   1.0.0
  */
 
 // Exit if accessed directly
-use ArrayPress\IPUtils\IP;
-
 defined( 'ABSPATH' ) || exit;
+
+use ArrayPress\IPUtils\IP;
 
 if ( ! function_exists( 'get_user_ip' ) ) {
 	/**
 	 * Get the current user's IP address.
 	 *
+	 * Attempts to determine the actual client IP address by checking various
+	 * HTTP headers, taking into account proxy servers and CDN configurations.
+	 *
 	 * @since 1.0.0
+	 *
 	 * @return string|null The user's IP address, or null if not found.
 	 */
 	function get_user_ip(): ?string {
@@ -32,29 +34,19 @@ if ( ! function_exists( 'get_user_ip' ) ) {
 	}
 }
 
-if ( ! function_exists( 'is_valid_ip' ) ) {
+if ( ! function_exists( 'anonymize_ip' ) ) {
 	/**
-	 * Validate an IP address (IPv4 or IPv6).
+	 * Anonymize an IP address for GDPR compliance.
+	 *
+	 * Zeroes out the last octet for IPv4 addresses or the last group for IPv6.
 	 *
 	 * @since 1.0.0
-	 * @param string $ip The IP address to validate.
-	 * @return bool True if the IP address is valid.
-	 */
-	function is_valid_ip( string $ip ): bool {
-		return IP::is_valid( $ip );
-	}
-}
-
-if ( ! function_exists( 'is_ip_in_range' ) ) {
-	/**
-	 * Check if an IP address is within a specified CIDR range.
 	 *
-	 * @since 1.0.0
-	 * @param string $ip    The IP address to check.
-	 * @param string $range The IP range in CIDR format.
-	 * @return bool True if IP is in range.
+	 * @param string $ip The IP address to anonymize.
+	 *
+	 * @return string|null The anonymized IP address, or null if invalid.
 	 */
-	function is_ip_in_range( string $ip, string $range ): bool {
-		return IP::is_in_range( $ip, $range );
+	function anonymize_ip( string $ip ): ?string {
+		return IP::anonymize( $ip );
 	}
 }
