@@ -24,16 +24,24 @@ class IP {
 
 	/**
 	 * Headers that might contain the real user's IP address, in order of priority.
-	 *
-	 * @var string[]
 	 */
-	protected static array $ip_headers = [
+	private const IP_HEADERS = [
 		'HTTP_CF_CONNECTING_IP',    // Cloudflare
 		'HTTP_X_REAL_IP',           // Nginx proxy
 		'HTTP_CLIENT_IP',           // Common proxy
 		'HTTP_X_FORWARDED_FOR',     // Common proxy
 		'REMOTE_ADDR',              // Direct connection
 	];
+
+	/**
+	 * Cloudflare country header name.
+	 */
+	private const CF_COUNTRY_HEADER = 'HTTP_CF_IPCOUNTRY';
+
+	/**
+	 * Cloudflare header for request ray ID.
+	 */
+	private const CF_RAY_HEADER = 'HTTP_CF_RAY';
 
 	/**
 	 * Get the current user's IP address.
@@ -44,7 +52,7 @@ class IP {
 	 * @return string|null The user's IP address, or null if not found/invalid.
 	 */
 	public static function get(): ?string {
-		foreach ( self::$ip_headers as $header ) {
+		foreach ( self::IP_HEADERS as $header ) {
 			if ( empty( $_SERVER[ $header ] ) ) {
 				continue;
 			}
@@ -230,6 +238,49 @@ class IP {
 		}
 
 		return null;
+	}
+
+	// ========================================
+	// Country Detection
+	// ========================================
+
+	/**
+	 * Get country code from Cloudflare header.
+	 *
+	 * @return string|null Two-letter country code or null if unavailable.
+	 */
+	public static function get_country(): ?string {
+		if ( empty( $_SERVER[ self::CF_COUNTRY_HEADER ] ) ) {
+			return null;
+		}
+
+		$country = strtoupper( substr( $_SERVER[ self::CF_COUNTRY_HEADER ], 0, 2 ) );
+
+		return ( preg_match( '/^[A-Z]{2}$/', $country ) && $country !== 'XX' )
+			? $country
+			: null;
+	}
+
+	/**
+	 * Check if request is from Tor exit node (via Cloudflare).
+	 *
+	 * @return bool True if Tor exit node.
+	 */
+	public static function is_tor(): bool {
+		return ( $_SERVER[ self::CF_COUNTRY_HEADER ] ?? '' ) === 'T1';
+	}
+
+	// ========================================
+	// Request Information
+	// ========================================
+
+	/**
+	 * Get Cloudflare ray ID for request tracing.
+	 *
+	 * @return string|null Ray ID or null if not behind Cloudflare.
+	 */
+	public static function get_ray_id(): ?string {
+		return $_SERVER[ self::CF_RAY_HEADER ] ?? null;
 	}
 
 	// ========================================
