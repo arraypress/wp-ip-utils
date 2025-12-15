@@ -183,10 +183,10 @@ class IP {
 	}
 
 	/**
-	 * Check if an IP address matches any in a list of IPs or IP ranges.
+	 * Check if an IP address matches any in a list of IPs, ranges, or wildcards.
 	 *
 	 * @param string $ip      The IP address to check.
-	 * @param array  $ip_list List of IPs or IP ranges to check against.
+	 * @param array  $ip_list List of IPs, CIDR ranges, or wildcard patterns.
 	 *
 	 * @return bool Whether the IP address matches any in the list.
 	 */
@@ -196,14 +196,23 @@ class IP {
 			return false;
 		}
 
-		foreach ( $ip_list as $list_ip ) {
-			$list_ip = trim( $list_ip );
+		foreach ( $ip_list as $pattern ) {
+			$pattern = trim( $pattern );
 
-			if ( str_contains( $list_ip, '/' ) && self::is_valid_range( $list_ip ) ) {
-				if ( self::is_in_range( $ip, $list_ip ) ) {
+			// Exact match.
+			if ( $pattern === $ip ) {
+				return true;
+			}
+
+			// CIDR range match.
+			if ( str_contains( $pattern, '/' ) && self::is_valid_range( $pattern ) ) {
+				if ( self::is_in_range( $ip, $pattern ) ) {
 					return true;
 				}
-			} elseif ( $list_ip === $ip ) {
+			}
+
+			// Wildcard match.
+			if ( str_contains( $pattern, '*' ) && self::matches_wildcard( $ip, $pattern ) ) {
 				return true;
 			}
 		}
@@ -327,6 +336,24 @@ class IP {
 		$mask = str_pad( $mask, 16, "\x00" );
 
 		return ( ( $ip_bin & $mask ) === ( $subnet_bin & $mask ) );
+	}
+
+	/**
+	 * Check if an IP matches a wildcard pattern.
+	 *
+	 * @param string $ip      The IP address to check.
+	 * @param string $pattern Wildcard pattern (e.g., 192.168.1.*).
+	 *
+	 * @return bool True if IP matches the pattern.
+	 */
+	public static function matches_wildcard( string $ip, string $pattern ): bool {
+		if ( ! self::is_valid( $ip ) || ! str_contains( $pattern, '*' ) ) {
+			return false;
+		}
+
+		$regex = '/^' . str_replace( [ '.', '*' ], [ '\\.', '\\d+' ], $pattern ) . '$/';
+
+		return preg_match( $regex, $ip ) === 1;
 	}
 
 }
