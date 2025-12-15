@@ -356,4 +356,82 @@ class IP {
 		return preg_match( $regex, $ip ) === 1;
 	}
 
+	/**
+	 * Check if a string is a valid IP pattern.
+	 *
+	 * Valid patterns:
+	 * - Single IP: 192.168.1.1
+	 * - CIDR range: 192.168.1.0/24
+	 *
+	 * @param string $pattern The pattern to validate.
+	 *
+	 * @return bool True if valid pattern.
+	 */
+	public static function is_valid_pattern( string $pattern ): bool {
+		$pattern = trim( $pattern );
+
+		if ( empty( $pattern ) ) {
+			return false;
+		}
+
+		// Valid IP.
+		if ( self::is_valid( $pattern ) ) {
+			return true;
+		}
+
+		// Valid CIDR range.
+		if ( self::is_valid_range( $pattern ) ) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Filter a list to only valid IP patterns.
+	 *
+	 * @param array $patterns List of patterns.
+	 *
+	 * @return array Valid patterns only.
+	 */
+	public static function filter_valid_patterns( array $patterns ): array {
+		return array_values( array_filter( $patterns, [ self::class, 'is_valid_pattern' ] ) );
+	}
+
+	/**
+	 * Sanitize and filter a list of IP patterns.
+	 *
+	 * Takes raw input (string or array) and returns a clean array of valid patterns.
+	 *
+	 * @param string|array $input     Raw input - newline-separated string or array.
+	 * @param bool         $as_string Return as newline-separated string instead of array.
+	 *
+	 * @return array|string Sanitized valid patterns.
+	 */
+	public static function sanitize_pattern_list( $input, bool $as_string = false ) {
+		// Convert string to array.
+		if ( is_string( $input ) ) {
+			$patterns = explode( "\n", $input );
+		} else {
+			$patterns = (array) $input;
+		}
+
+		// Clean up each pattern.
+		$patterns = array_map( 'trim', $patterns );
+		$patterns = array_filter( $patterns );
+
+		// WordPress sanitization if available.
+		if ( function_exists( 'sanitize_text_field' ) ) {
+			$patterns = array_map( 'sanitize_text_field', $patterns );
+		}
+
+		// Remove duplicates.
+		$patterns = array_unique( $patterns );
+
+		// Filter to valid patterns only.
+		$patterns = self::filter_valid_patterns( $patterns );
+
+		return $as_string ? implode( "\n", $patterns ) : $patterns;
+	}
+
 }
