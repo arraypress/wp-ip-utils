@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.1.1
+
+### Added
+
+- **`IP::get( bool $allow_private = false )`.** Returns private,
+  loopback and reserved addresses instead of null — for audit logs and
+  intranet deployments, where "logged in from 192.168.1.50" is the data
+  you actually want. The trusted-proxy rule is unchanged: this loosens
+  which *addresses* are acceptable, never which *sources* are believed.
+
+  Consumers that previously reimplemented a permissive header cascade
+  inline should call `IP::get( true )` instead, so the trust gate is
+  inherited rather than bypassed.
+
+  On an intranet the client is itself inside the default trusted range
+  (RFC 1918), so the right-to-left walk would skip the real visitor as
+  infrastructure. In permissive mode only, the client-most entry is used
+  as a fallback. That value is advisory for an audit log, not a security
+  boundary — set `ARRAYPRESS_TRUSTED_PROXIES` to your real proxy
+  addresses if you need it to be authoritative.
+
 ## 1.1.0
 
 ### Security

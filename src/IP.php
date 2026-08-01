@@ -106,10 +106,20 @@ class IP {
 	 * health-check port — can declare any IP they like, and every
 	 * IP-keyed decision becomes theirs to control.
 	 *
+	 * @param bool $allow_private Return private, loopback and reserved
+	 *                            addresses instead of null. For audit
+	 *                            logs and intranet deployments, where
+	 *                            "logged in from 192.168.1.50" is useful
+	 *                            data. The trusted-proxy rule still
+	 *                            applies — this loosens which addresses
+	 *                            are acceptable, never which sources are
+	 *                            believed.
+	 *
 	 * @return string|null The user's IP address, or null if not found/invalid.
 	 * @since  1.1.0 Forwarding headers now require a trusted proxy.
+	 * @since  1.1.1 Added $allow_private.
 	 */
-	public static function get(): ?string {
+	public static function get( bool $allow_private = false ): ?string {
 		$remote = trim( (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ) );
 		$remote = self::is_valid( $remote ) ? $remote : null;
 
@@ -119,7 +129,7 @@ class IP {
 					continue;
 				}
 
-				$found = self::from_forwarded( (string) $_SERVER[ $header ] );
+				$found = self::from_forwarded( (string) $_SERVER[ $header ], $allow_private );
 
 				if ( null !== $found ) {
 					return $found;
@@ -127,7 +137,11 @@ class IP {
 			}
 		}
 
-		return ( null !== $remote && ! self::is_private( $remote ) ) ? $remote : null;
+		if ( null === $remote ) {
+			return null;
+		}
+
+		return ( $allow_private || ! self::is_private( $remote ) ) ? $remote : null;
 	}
 
 	/**
@@ -143,13 +157,15 @@ class IP {
 	 * Taking the leftmost entry — the common implementation — takes the
 	 * one value in the header an attacker fully controls.
 	 *
-	 * @param string $value Raw header value.
+	 * @param string $value         Raw header value.
+	 * @param bool   $allow_private Accept a private client address.
 	 *
 	 * @return string|null Client address, or null if none usable.
 	 * @since  1.1.0
 	 */
-	private static function from_forwarded( string $value ): ?string {
-		$parts = array_reverse( array_map( 'trim', explode( ',', $value ) ) );
+	private static function from_forwarded( string $value, bool $allow_private = false ): ?string {
+		$parts    = array_reverse( array_map( 'trim', explode( ',', $value ) ) );
+		$furthest = null;
 
 		foreach ( $parts as $candidate ) {
 			$candidate = self::strip_port( $candidate );
@@ -158,15 +174,30 @@ class IP {
 				continue;
 			}
 
+			// Remember the client-most valid entry as we go, for the
+			// permissive fallback below.
+			$furthest = $candidate;
+
 			// Skip our own infrastructure to reach the real client.
 			if ( self::is_trusted_proxy( $candidate ) ) {
 				continue;
 			}
 
-			return self::is_private( $candidate ) ? null : $candidate;
+			return ( $allow_private || ! self::is_private( $candidate ) ) ? $candidate : null;
 		}
 
-		return null;
+		// Every entry looked like one of our proxies. On an intranet that
+		// is expected rather than suspicious: the trusted list contains
+		// RFC 1918 by default, and the client is on RFC 1918 too, so the
+		// real visitor gets skipped as infrastructure. In permissive mode
+		// fall back to the client-most entry.
+		//
+		// This is deliberately NOT done in strict mode. The leftmost
+		// entry is the part of the header a client can pre-seed, so it is
+		// advisory information for an audit log, never a security
+		// boundary. Configure ARRAYPRESS_TRUSTED_PROXIES with your actual
+		// proxy addresses if you need this to be authoritative.
+		return $allow_private ? $furthest : null;
 	}
 
 	/**
