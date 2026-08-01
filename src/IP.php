@@ -23,14 +23,62 @@ namespace ArrayPress\IPUtils;
 class IP {
 
 	/**
-	 * Headers that might contain the real user's IP address, in order of priority.
+	 * Forwarding headers, in order of priority.
+	 *
+	 * These are ONLY consulted when the connection itself arrived from a
+	 * trusted proxy — see {@see IP::get()}. They are ordinary request
+	 * headers, so anyone can send them.
 	 */
-	private const IP_HEADERS = [
+	private const FORWARDED_HEADERS = [
 		'HTTP_CF_CONNECTING_IP',    // Cloudflare
 		'HTTP_X_REAL_IP',           // Nginx proxy
-		'HTTP_CLIENT_IP',           // Common proxy
-		'HTTP_X_FORWARDED_FOR',     // Common proxy
-		'REMOTE_ADDR',              // Direct connection
+		'HTTP_X_FORWARDED_FOR',     // Standard proxy chain
+		'HTTP_CLIENT_IP',           // Legacy proxy
+	];
+
+	/**
+	 * Proxy ranges trusted by default.
+	 *
+	 * Cloudflare's published ranges plus loopback and RFC 1918, which
+	 * covers the usual deployments: behind Cloudflare, or behind nginx /
+	 * Caddy / HAProxy on the same host or private network.
+	 *
+	 * Override with the ARRAYPRESS_TRUSTED_PROXIES constant or the
+	 * 'arraypress_trusted_proxies' filter. Cloudflare's list changes —
+	 * refresh from https://www.cloudflare.com/ips/.
+	 */
+	private const DEFAULT_TRUSTED_PROXIES = [
+		// Loopback and private networks.
+		'127.0.0.0/8',
+		'::1/128',
+		'10.0.0.0/8',
+		'172.16.0.0/12',
+		'192.168.0.0/16',
+		'fd00::/8',
+		// Cloudflare IPv4.
+		'173.245.48.0/20',
+		'103.21.244.0/22',
+		'103.22.200.0/22',
+		'103.31.4.0/22',
+		'141.101.64.0/18',
+		'108.162.192.0/18',
+		'190.93.240.0/20',
+		'188.114.96.0/20',
+		'197.234.240.0/22',
+		'198.41.128.0/17',
+		'162.158.0.0/15',
+		'104.16.0.0/13',
+		'104.24.0.0/14',
+		'172.64.0.0/13',
+		'131.0.72.0/22',
+		// Cloudflare IPv6.
+		'2400:cb00::/32',
+		'2606:4700::/32',
+		'2803:f800::/32',
+		'2405:b500::/32',
+		'2405:8100::/32',
+		'2a06:98c0::/29',
+		'2c0f:f248::/32',
 	];
 
 	/**
@@ -46,29 +94,158 @@ class IP {
 	/**
 	 * Get the current user's IP address.
 	 *
-	 * Attempts to determine the actual client IP address by checking various HTTP headers,
-	 * taking into account proxy servers and CDN configurations.
+	 * Forwarding headers (X-Forwarded-For, CF-Connecting-IP, and friends)
+	 * are ordinary request headers that anyone can send. They are only
+	 * meaningful when the request actually arrived through a proxy you
+	 * put there, so they are consulted only when REMOTE_ADDR is itself in
+	 * {@see IP::trusted_proxies()}. Otherwise REMOTE_ADDR is used and the
+	 * headers are ignored, whatever they claim.
+	 *
+	 * Without that check, anyone able to reach the origin directly — a
+	 * leaked origin address, a DNS record that bypasses the CDN, an open
+	 * health-check port — can declare any IP they like, and every
+	 * IP-keyed decision becomes theirs to control.
 	 *
 	 * @return string|null The user's IP address, or null if not found/invalid.
+	 * @since  1.1.0 Forwarding headers now require a trusted proxy.
 	 */
 	public static function get(): ?string {
-		foreach ( self::IP_HEADERS as $header ) {
-			if ( empty( $_SERVER[ $header ] ) ) {
-				continue;
-			}
+		$remote = trim( (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ) );
+		$remote = self::is_valid( $remote ) ? $remote : null;
 
-			$ip = $_SERVER[ $header ];
-			if ( $header === 'HTTP_X_FORWARDED_FOR' ) {
-				$ips = explode( ',', $ip );
-				$ip  = trim( $ips[0] );
-			}
+		if ( null !== $remote && self::is_trusted_proxy( $remote ) ) {
+			foreach ( self::FORWARDED_HEADERS as $header ) {
+				if ( empty( $_SERVER[ $header ] ) ) {
+					continue;
+				}
 
-			if ( self::is_valid( $ip ) && ! self::is_private( $ip ) ) {
-				return $ip;
+				$found = self::from_forwarded( (string) $_SERVER[ $header ] );
+
+				if ( null !== $found ) {
+					return $found;
+				}
 			}
 		}
 
+		return ( null !== $remote && ! self::is_private( $remote ) ) ? $remote : null;
+	}
+
+	/**
+	 * Extract the client address from a forwarding header value.
+	 *
+	 * X-Forwarded-For grows left to right as it passes through proxies:
+	 * "client, proxy1, proxy2". Entries appended by trusted proxies can
+	 * be believed; everything to the left of those came from whoever
+	 * called first, and a client can pre-seed the header with invented
+	 * hops. So the list is walked from the RIGHT, skipping our own
+	 * proxies, and the first remaining address wins.
+	 *
+	 * Taking the leftmost entry — the common implementation — takes the
+	 * one value in the header an attacker fully controls.
+	 *
+	 * @param string $value Raw header value.
+	 *
+	 * @return string|null Client address, or null if none usable.
+	 * @since  1.1.0
+	 */
+	private static function from_forwarded( string $value ): ?string {
+		$parts = array_reverse( array_map( 'trim', explode( ',', $value ) ) );
+
+		foreach ( $parts as $candidate ) {
+			$candidate = self::strip_port( $candidate );
+
+			if ( ! self::is_valid( $candidate ) ) {
+				continue;
+			}
+
+			// Skip our own infrastructure to reach the real client.
+			if ( self::is_trusted_proxy( $candidate ) ) {
+				continue;
+			}
+
+			return self::is_private( $candidate ) ? null : $candidate;
+		}
+
 		return null;
+	}
+
+	/**
+	 * Remove a trailing port, handling bracketed IPv6.
+	 *
+	 * @param string $value Address, possibly with a port.
+	 *
+	 * @return string
+	 * @since  1.1.0
+	 */
+	private static function strip_port( string $value ): string {
+		$value = trim( $value );
+
+		if ( str_starts_with( $value, '[' ) ) {
+			$close = strpos( $value, ']' );
+
+			return $close === false ? $value : substr( $value, 1, $close - 1 );
+		}
+
+		// A bare IPv6 address has several colons and no port, so only
+		// strip when there is exactly one.
+		if ( substr_count( $value, ':' ) === 1 ) {
+			return explode( ':', $value, 2 )[0];
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Whether an address is one of our own proxies.
+	 *
+	 * @param string $ip Address to check.
+	 *
+	 * @return bool
+	 * @since  1.1.0
+	 */
+	public static function is_trusted_proxy( string $ip ): bool {
+		$proxies = self::trusted_proxies();
+
+		return ! empty( $proxies ) && self::is_match( $ip, $proxies );
+	}
+
+	/**
+	 * The proxy ranges whose forwarding headers are believed.
+	 *
+	 * Configure with either:
+	 *
+	 *   define( 'ARRAYPRESS_TRUSTED_PROXIES', '203.0.113.5,198.51.100.0/24' );
+	 *
+	 *   add_filter( 'arraypress_trusted_proxies', function ( array $ranges ) {
+	 *       return [ '203.0.113.5' ];
+	 *   } );
+	 *
+	 * Set it to an empty list when the application is reached directly —
+	 * then no forwarding header is ever believed, which is the safest
+	 * configuration and the correct one without a proxy.
+	 *
+	 * @return array List of IPs, CIDR ranges, or wildcard patterns.
+	 * @since  1.1.0
+	 */
+	public static function trusted_proxies(): array {
+		$proxies = self::DEFAULT_TRUSTED_PROXIES;
+
+		if ( defined( 'ARRAYPRESS_TRUSTED_PROXIES' ) ) {
+			$configured = constant( 'ARRAYPRESS_TRUSTED_PROXIES' );
+			$proxies    = is_array( $configured )
+				? $configured
+				: array_filter( array_map( 'trim', explode( ',', (string) $configured ) ) );
+		}
+
+		if ( function_exists( 'apply_filters' ) ) {
+			$filtered = apply_filters( 'arraypress_trusted_proxies', $proxies );
+
+			if ( is_array( $filtered ) ) {
+				$proxies = $filtered;
+			}
+		}
+
+		return $proxies;
 	}
 
 	/**
@@ -171,11 +348,16 @@ class IP {
 		[ $subnet, $bits ] = explode( '/', $range );
 		$bits = (int) $bits;
 
-		if ( self::is_valid_ipv4( $ip ) ) {
+		// Both sides must be the same family. Dispatching on the address
+		// alone sends an IPv4 address into the IPv4 comparison with an
+		// IPv6 prefix length, and "32 - 128" is a fatal ArithmeticError
+		// rather than a false. Mixed lists are perfectly ordinary, so
+		// this has to be a miss, not a crash.
+		if ( self::is_valid_ipv4( $ip ) && self::is_valid_ipv4( $subnet ) ) {
 			return self::is_ipv4_in_range( $ip, $subnet, $bits );
 		}
 
-		if ( self::is_valid_ipv6( $ip ) ) {
+		if ( self::is_valid_ipv6( $ip ) && self::is_valid_ipv6( $subnet ) ) {
 			return self::is_ipv6_in_range( $ip, $subnet, $bits );
 		}
 
@@ -327,11 +509,19 @@ class IP {
 		$ip_bin     = inet_pton( $ip );
 		$subnet_bin = inet_pton( $subnet );
 
-		// Create mask
+		if ( $ip_bin === false || $subnet_bin === false ) {
+			return false;
+		}
+
+		$bits = max( 0, min( 128, $bits ) );
+
+		// Create mask.
 		$mask      = str_repeat( "\xFF", $bits >> 3 );
 		$remainder = $bits & 7;
 		if ( $remainder ) {
-			$mask .= chr( 0xFF << ( 8 - $remainder ) );
+			// Mask to a byte: "0xFF << n" produces a value above 255,
+			// which chr() has deprecated and which will become an error.
+			$mask .= chr( ( 0xFF << ( 8 - $remainder ) ) & 0xFF );
 		}
 		$mask = str_pad( $mask, 16, "\x00" );
 
