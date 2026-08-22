@@ -1,5 +1,5 @@
 {
-  "name": "arraypress/wp-utils-ip",
+  "name": "arraypress/wp-ip-utils",
   "description": "A lean WordPress utility for IP address validation, CIDR operations, and GDPR-compliant anonymization",
   "type": "library",
   "license": "GPL-2.0-or-later",
