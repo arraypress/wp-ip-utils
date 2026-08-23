@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.0/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         colors="true"
+         failOnWarning="true"
+         failOnNotice="true"
+         beStrictAboutOutputDuringTests="true">
+    <testsuites>
+        <testsuite name="WP IP Utils">
+            <directory>tests</directory>
+            <exclude>tests/allow-private.php</exclude>
+            <exclude>tests/client-ip.php</exclude>
+            <exclude>tests/mixed-family.php</exclude>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
+</phpunit>

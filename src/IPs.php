@@ -137,16 +137,16 @@ class IPs {
 	 *
 	 * @param array  $ips     Array of IP addresses.
 	 * @param string $range   CIDR range to filter by.
-	 * @param bool   $include Whether to include (true) or exclude (false) matches.
+	 * @param bool   $keep_matches Whether to include (true) or exclude (false) matches.
 	 *
 	 * @return array Filtered IP addresses.
 	 */
-	public static function filter_by_range( array $ips, string $range, bool $include = true ): array {
+	public static function filter_by_range( array $ips, string $range, bool $keep_matches = true ): array {
 		$filtered = [];
 
 		foreach ( $ips as $ip ) {
 			$in_range = IP::is_in_range( $ip, $range );
-			if ( ( $include && $in_range ) || ( ! $include && ! $in_range ) ) {
+			if ( ( $keep_matches && $in_range ) || ( ! $keep_matches && ! $in_range ) ) {
 				$filtered[] = $ip;
 			}
 		}
@@ -159,21 +159,20 @@ class IPs {
 	 *
 	 * @param array $ips     Array of IP addresses.
 	 * @param array $ranges  Array of CIDR ranges.
-	 * @param bool  $include Whether to include (true) or exclude (false) matches.
+	 * @param bool  $keep_matches Whether to include (true) or exclude (false) matches.
 	 *
 	 * @return array Filtered IP addresses.
 	 */
-	public static function filter_by_ranges( array $ips, array $ranges, bool $include = true ): array {
+	public static function filter_by_ranges( array $ips, array $ranges, bool $keep_matches = true ): array {
 		$filtered = [];
 
 		foreach ( $ips as $ip ) {
 			$matches = IP::is_match( $ip, $ranges );
-			if ( ( $include && $matches ) || ( ! $include && ! $matches ) ) {
+			if ( ( $keep_matches && $matches ) || ( ! $keep_matches && ! $matches ) ) {
 				$filtered[] = $ip;
 			}
 		}
 
 		return $filtered;
 	}
-
 }

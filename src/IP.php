@@ -120,16 +120,18 @@ class IP {
 	 * @since  1.1.1 Added $allow_private.
 	 */
 	public static function get( bool $allow_private = false ): ?string {
-		$remote = trim( (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ) );
+		$remote = self::server( 'REMOTE_ADDR' );
 		$remote = self::is_valid( $remote ) ? $remote : null;
 
 		if ( null !== $remote && self::is_trusted_proxy( $remote ) ) {
 			foreach ( self::FORWARDED_HEADERS as $header ) {
-				if ( empty( $_SERVER[ $header ] ) ) {
+				$value = self::server( $header );
+
+				if ( '' === $value ) {
 					continue;
 				}
 
-				$found = self::from_forwarded( (string) $_SERVER[ $header ], $allow_private );
+				$found = self::from_forwarded( $value, $allow_private );
 
 				if ( null !== $found ) {
 					return $found;
@@ -476,7 +478,7 @@ class IP {
 			return null;
 		}
 
-		$country = strtoupper( substr( $_SERVER[ self::CF_COUNTRY_HEADER ], 0, 2 ) );
+		$country = strtoupper( substr( self::server( self::CF_COUNTRY_HEADER ), 0, 2 ) );
 
 		return ( preg_match( '/^[A-Z]{2}$/', $country ) && $country !== 'XX' )
 			? $country
@@ -489,7 +491,7 @@ class IP {
 	 * @return bool True if Tor exit node.
 	 */
 	public static function is_tor(): bool {
-		return ( $_SERVER[ self::CF_COUNTRY_HEADER ] ?? '' ) === 'T1';
+		return 'T1' === self::server( self::CF_COUNTRY_HEADER );
 	}
 
 	// ========================================
@@ -502,7 +504,45 @@ class IP {
 	 * @return string|null Ray ID or null if not behind Cloudflare.
 	 */
 	public static function get_ray_id(): ?string {
-		return $_SERVER[ self::CF_RAY_HEADER ] ?? null;
+		$ray = self::server( self::CF_RAY_HEADER );
+
+		return '' !== $ray ? $ray : null;
+	}
+
+	/**
+	 * Read a $_SERVER value, unslashed.
+	 *
+	 * WordPress runs add_magic_quotes() over $_SERVER as well as the request
+	 * superglobals, so a header containing a quote arrives with a backslash in
+	 * front of it. Reading these raw is why every caller here looked like an
+	 * unsanitised input to the coding standards -- and, less cosmetically, why
+	 * a quoted user agent or forwarded header would not compare equal to
+	 * itself.
+	 *
+	 * Falls back to the raw value outside WordPress, where nothing added the
+	 * slashes in the first place.
+	 *
+	 * @param string $key The $_SERVER key.
+	 *
+	 * @return string The unslashed value, or an empty string.
+	 *
+	 * @since 1.2.0
+	 */
+	private static function server( string $key ): string {
+		if ( ! isset( $_SERVER[ $key ] ) ) {
+			return '';
+		}
+
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- both happen below, conditionally, because this library also runs without WordPress.
+		$value = $_SERVER[ $key ];
+
+		if ( function_exists( 'wp_unslash' ) ) {
+			$value = wp_unslash( $value );
+		}
+
+		$value = is_scalar( $value ) ? (string) $value : '';
+
+		return function_exists( 'sanitize_text_field' ) ? sanitize_text_field( $value ) : trim( $value );
 	}
 
 	// ========================================
@@ -583,6 +623,11 @@ class IP {
 	 * Valid patterns:
 	 * - Single IP: 192.168.1.1
 	 * - CIDR range: 192.168.1.0/24
+	 * - Wildcard: 192.168.*.* or 2001:db8:*
+	 *
+	 * Wildcards count because is_match() matches them. Leaving them out here
+	 * meant sanitize_pattern_list() stripped exactly the rules matching
+	 * supports, so a saved list quietly lost every wildcard in it.
 	 *
 	 * @param string $pattern The pattern to validate.
 	 *
@@ -605,7 +650,42 @@ class IP {
 			return true;
 		}
 
+		// Wildcard pattern.
+		if ( str_contains( $pattern, '*' ) ) {
+			return self::is_valid_wildcard( $pattern );
+		}
+
 		return false;
+	}
+
+	/**
+	 * Check whether a wildcard pattern is one that could ever be meant.
+	 *
+	 * A pattern of nothing but wildcards and separators matches every address
+	 * in its family, which nobody types into a list on purpose -- and in an
+	 * allowlist it is indistinguishable from having no restriction at all.
+	 * Accepting it as "valid" would let it through a sanitiser unremarked.
+	 *
+	 * @param string $pattern The pattern to validate.
+	 *
+	 * @return bool True if the pattern has at least one literal part.
+	 *
+	 * @since 1.2.0
+	 */
+	public static function is_valid_wildcard( string $pattern ): bool {
+		$pattern = trim( $pattern );
+
+		if ( ! str_contains( $pattern, '*' ) ) {
+			return false;
+		}
+
+		// Only the characters an address is written with, plus the wildcard.
+		if ( 1 !== preg_match( '/^[0-9a-fA-F.:*]+$/', $pattern ) ) {
+			return false;
+		}
+
+		// At least one part has to be a literal.
+		return '' !== trim( str_replace( array( '*', '.', ':' ), '', $pattern ) );
 	}
 
 	/**
@@ -654,5 +734,4 @@ class IP {
 
 		return $as_string ? implode( "\n", $patterns ) : $patterns;
 	}
-
 }
