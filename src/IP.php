@@ -468,22 +468,21 @@ class IP {
 	// Country Detection
 	// ========================================
 
-	/**
-	 * Get country code from Cloudflare header.
+	/*
+	 * get_country() used to live here and has been removed.
 	 *
-	 * @return string|null Two-letter country code or null if unavailable.
+	 * It read Cloudflare's country header, took the first two characters and
+	 * *then* checked the shape -- so a header of "INVALID123" came back as
+	 * "IN", India, with nothing downstream able to tell. It also believed the
+	 * header on its own, and anything can send that header to an origin
+	 * reachable by IP.
+	 *
+	 * arraypress/wp-visitor-country does the same job properly: it refuses a
+	 * value that is not a country code rather than trimming one into shape,
+	 * and reads Cloudflare's header only when another header Cloudflare sets
+	 * is present. It also covers CloudFront, Fastly, BunnyCDN and server-level
+	 * GeoIP, which this never did.
 	 */
-	public static function get_country(): ?string {
-		if ( empty( $_SERVER[ self::CF_COUNTRY_HEADER ] ) ) {
-			return null;
-		}
-
-		$country = strtoupper( substr( self::server( self::CF_COUNTRY_HEADER ), 0, 2 ) );
-
-		return ( preg_match( '/^[A-Z]{2}$/', $country ) && $country !== 'XX' )
-			? $country
-			: null;
-	}
 
 	/**
 	 * Check if request is from Tor exit node (via Cloudflare).
