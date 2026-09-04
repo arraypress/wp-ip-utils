@@ -487,9 +487,23 @@ class IP {
 	/**
 	 * Check if request is from Tor exit node (via Cloudflare).
 	 *
+	 * Cloudflare marks a Tor exit node with a country of T1. The header is
+	 * the client's to write unless Cloudflare wrote it, so it is read only
+	 * when the request arrived through a trusted proxy -- the same rule
+	 * get() applies to the forwarding headers. Without that, anyone reaching
+	 * the origin directly could send CF-IPCountry: T1 and trip, or dodge, a
+	 * Tor rule.
+	 *
 	 * @return bool True if Tor exit node.
+	 * @since  1.1.2 Requires a trusted proxy, like get().
 	 */
 	public static function is_tor(): bool {
+		$remote = self::server( 'REMOTE_ADDR' );
+
+		if ( ! self::is_valid( $remote ) || ! self::is_trusted_proxy( $remote ) ) {
+			return false;
+		}
+
 		return 'T1' === self::server( self::CF_COUNTRY_HEADER );
 	}
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.2
+
+### Fixed
+
+- **`IP::is_tor()` believes Cloudflare only through Cloudflare.** It read
+  the CF-IPCountry header from anyone, so a visitor reaching the origin
+  directly could send `T1` and trip, or dodge, a Tor rule. It now applies
+  the same trusted-proxy rule as `IP::get()`: the header is read only when
+  REMOTE_ADDR is a trusted proxy.
+
 ## 1.1.1
 
 ### Added
